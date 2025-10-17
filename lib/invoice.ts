@@ -1,16 +1,14 @@
-import { InvoicePayload, InvoiceTotals } from '@/types/invoice';
+import { InvoicePayload, InvoiceTotals, LineItem } from '@/types/invoice';
 
-export const calculateTotals = (invoice: InvoicePayload): InvoiceTotals => {
-  const subtotal = invoice.lineItems.reduce((acc, item) => {
-    return acc + item.quantity * item.unitPrice;
-  }, 0);
-
-  const taxTotal = invoice.lineItems.reduce((acc, item) => {
+export const calculateTotalsFromItems = (
+  lineItems: LineItem[],
+  roundOff: number
+): InvoiceTotals => {
+  const subtotal = lineItems.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+  const taxTotal = lineItems.reduce((acc, item) => {
     const base = item.quantity * item.unitPrice;
     return acc + base * (item.taxRate / 100);
   }, 0);
-
-  const roundOff = invoice.roundOff;
   const total = subtotal + taxTotal + roundOff;
 
   return {
@@ -20,6 +18,9 @@ export const calculateTotals = (invoice: InvoicePayload): InvoiceTotals => {
     total
   };
 };
+
+export const calculateTotals = (invoice: InvoicePayload): InvoiceTotals =>
+  calculateTotalsFromItems(invoice.lineItems, invoice.roundOff);
 
 export const getCustomerShortcode = (name: string) => {
   const cleaned = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();

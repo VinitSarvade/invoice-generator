@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { InvoicePayload, InvoiceTotals } from '@/types/invoice';
+import { useForm } from '@tanstack/react-form';
+import clsx from 'clsx';
 import { formatCurrency } from '@/lib/format';
+import type { InvoicePayload, InvoiceTotals } from '@/types/invoice';
 
 interface EmailInvoiceModalProps {
   open: boolean;
@@ -21,6 +23,13 @@ interface EmailInvoiceModalProps {
   }) => Promise<void>;
 }
 
+interface EmailFormValues {
+  to: string;
+  subject: string;
+  message: string;
+  copyToSelf: boolean;
+}
+
 export const EmailInvoiceModal = ({
   open,
   onClose,
@@ -32,32 +41,43 @@ export const EmailInvoiceModal = ({
   onCopyEmailChange,
   onSend
 }: EmailInvoiceModalProps) => {
-  const [to, setTo] = useState('');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
-  const [copyToSelf, setCopyToSelf] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(
+    null
+  );
   const [isSending, setIsSending] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  const emailForm = useForm<EmailFormValues>({
+    defaultValues: {
+      to: '',
+      subject: '',
+      message: '',
+      copyToSelf: false
+    }
+  });
+  const EmailField = emailForm.Field;
 
   useEffect(() => {
     if (open && invoice) {
-      const defaultSubject = `Invoice ${invoice.invoiceNumber}`;
       const formattedTotal = formatCurrency(totals.total, invoice.currency);
-      const defaultMessage = `Hi ${invoice.customer.name},\n\nPlease find attached invoice ${invoice.invoiceNumber} for ${formattedTotal}.\n\nIf you have any questions, feel free to reply to this email.\n\nThank you!`;
-
-      setSubject(defaultSubject);
-      setMessage(defaultMessage);
-      setTo(invoice.customer.email ?? '');
-      setCopyToSelf(Boolean(copyEmail));
+      emailForm.reset(
+        {
+          to: invoice.customer.email ?? '',
+          subject: `Invoice ${invoice.invoiceNumber}`,
+          message: `Hi ${invoice.customer.name},\n\nPlease find attached invoice ${invoice.invoiceNumber} for ${formattedTotal}.\n\nIf you have any questions, feel free to reply to this email.\n\nThank you!`,
+          copyToSelf: Boolean(copyEmail)
+        },
+        { keepDefaultValues: true }
+      );
       setFeedback(null);
     }
-  }, [open, invoice, totals.total, copyEmail]);
+  }, [open, invoice, totals.total, copyEmail, emailForm]);
 
+  const formValues = emailForm.useStore((state) => state.values);
   const canSend = useMemo(() => {
-    return Boolean(invoice && to && subject && message && senderEmail);
-  }, [invoice, to, subject, message, senderEmail]);
+    return Boolean(invoice && formValues.to && formValues.subject && formValues.message && senderEmail);
+  }, [invoice, formValues.to, formValues.subject, formValues.message, senderEmail]);
 
-  const handleSend = async () => {
+  const handleSubmit = async () => {
     if (!canSend) {
       setFeedback({ type: 'error', text: 'Please complete all required fields.' });
       return;
@@ -66,15 +86,15 @@ export const EmailInvoiceModal = ({
     setFeedback(null);
     try {
       await onSend({
-        to,
-        subject,
-        message,
-        copyToSelf
+        to: formValues.to,
+        subject: formValues.subject,
+        message: formValues.message,
+        copyToSelf: formValues.copyToSelf
       });
       setFeedback({ type: 'success', text: 'Invoice email has been queued successfully.' });
       setTimeout(() => {
         onClose();
-      }, 700);
+      }, 800);
     } catch (error) {
       setFeedback({ type: 'error', text: 'Unable to send email. Please try again.' });
     } finally {
@@ -87,104 +107,122 @@ export const EmailInvoiceModal = ({
   }
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal-panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6">
+      <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 700 }}>Email Invoice</h2>
-            <p style={{ color: 'var(--color-muted)', marginTop: '0.25rem', fontSize: '0.9rem' }}>
-              Send <span className="badge">{invoice?.invoiceNumber}</span> directly to your customer.
+            <h2 className="text-xl font-semibold text-slate-900">Email invoice</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Send{' '}
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                {invoice?.invoiceNumber ?? 'Draft'}
+              </span>{' '}
+              directly to your customer.
             </p>
           </div>
-          <button className="secondary" onClick={onClose} style={{ padding: '0.5rem 0.9rem' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
             Close
           </button>
         </div>
 
-        <div style={{ display: 'grid', gap: '1rem', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'grid', gap: '0.35rem' }}>
-            <label htmlFor="email-to">Send to</label>
-            <input
-              id="email-to"
-              type="email"
-              placeholder="customer@example.com"
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
-              required
-            />
-          </div>
-
-          <div style={{ display: 'grid', gap: '0.35rem' }}>
-            <label htmlFor="email-subject">Subject</label>
-            <input
-              id="email-subject"
-              value={subject}
-              onChange={(event) => setSubject(event.target.value)}
-              required
-            />
-          </div>
-
-          <div style={{ display: 'grid', gap: '0.35rem' }}>
-            <label htmlFor="email-message">Message</label>
-            <textarea
-              id="email-message"
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              rows={6}
-              required
-            />
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-muted)' }}>
-              The invoice PDF will be attached automatically.
-            </span>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gap: '0.5rem',
-              padding: '1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
-              background: 'rgba(37, 99, 235, 0.04)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input
-                id="copy-to-self"
-                type="checkbox"
-                checked={copyToSelf}
-                onChange={(event) => setCopyToSelf(event.target.checked)}
-              />
-              <label htmlFor="copy-to-self" style={{ margin: 0, cursor: 'pointer' }}>
-                Send a copy to myself
-              </label>
-            </div>
-
-            {copyToSelf && (
-              <div style={{ display: 'grid', gap: '0.35rem' }}>
-                <label htmlFor="copy-email">My email address</label>
+        <div className="mt-6 grid gap-4">
+          <EmailField name="to">
+            {(field) => (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold uppercase text-slate-500">Recipient</label>
                 <input
-                  id="copy-email"
+                  id="email-to"
                   type="email"
-                  placeholder="you@example.com"
-                  value={copyEmail}
-                  onChange={(event) => onCopyEmailChange(event.target.value)}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="customer@example.com"
+                  value={field.state.value}
+                  onChange={(event) => field.handleChange(event.target.value)}
                 />
               </div>
             )}
-          </div>
+          </EmailField>
 
-          <div style={{ display: 'grid', gap: '0.35rem' }}>
-            <label htmlFor="sender-email">Sender email</label>
+          <EmailField name="subject">
+            {(field) => (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold uppercase text-slate-500">Subject</label>
+                <input
+                  id="email-subject"
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={field.state.value}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                />
+              </div>
+            )}
+          </EmailField>
+
+          <EmailField name="message">
+            {(field) => (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold uppercase text-slate-500">Message</label>
+                <textarea
+                  id="email-message"
+                  rows={6}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={field.state.value}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                />
+                <span className="text-xs text-slate-400">The invoice PDF will be attached automatically.</span>
+              </div>
+            )}
+          </EmailField>
+
+          <EmailField name="copyToSelf">
+            {(field) => (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+                <label className="flex items-center gap-2 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={field.state.value}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      field.handleChange(checked);
+                      if (!checked) {
+                        onCopyEmailChange('');
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Send a copy to myself
+                </label>
+                {field.state.value && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <label className="text-xs font-semibold uppercase text-slate-500">
+                      My email address
+                    </label>
+                    <input
+                      type="email"
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="you@example.com"
+                      value={copyEmail}
+                      onChange={(event) => onCopyEmailChange(event.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </EmailField>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold uppercase text-slate-500">Sender email</label>
             <input
               id="sender-email"
               type="email"
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
               placeholder="billing@yourcompany.com"
               value={senderEmail}
               onChange={(event) => onSenderEmailChange(event.target.value)}
-              required
             />
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-muted)' }}>
+            <span className="text-xs text-slate-400">
               This address will appear as the sender of the message.
             </span>
           </div>
@@ -192,24 +230,35 @@ export const EmailInvoiceModal = ({
 
         {feedback && (
           <div
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-sm)',
-              marginBottom: '1.25rem',
-              color: feedback.type === 'error' ? '#991b1b' : '#166534',
-              background:
-                feedback.type === 'error' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(34, 197, 94, 0.16)'
-            }}
+            className={clsx(
+              'mt-6 rounded-md px-4 py-3 text-sm',
+              feedback.type === 'success'
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-rose-50 text-rose-700'
+            )}
           >
             {feedback.text}
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-          <button className="secondary" onClick={onClose} disabled={isSending}>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            disabled={isSending}
+          >
             Cancel
           </button>
-          <button className="primary" onClick={handleSend} disabled={isSending || !canSend}>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSending || !canSend}
+            className={clsx(
+              'inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500',
+              (isSending || !canSend) && 'cursor-not-allowed opacity-70'
+            )}
+          >
             {isSending ? 'Sending…' : 'Send invoice'}
           </button>
         </div>
