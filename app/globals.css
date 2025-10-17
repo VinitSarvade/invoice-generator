@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --theme-surface: 255 255 255;
+  --theme-muted: 100 116 139;
+  --theme-ring: 59 130 246;
+  color-scheme: light;
+}
+
+[data-theme='noir'] {
+  --theme-surface: 17 24 39;
+  --theme-muted: 148 163 184;
+  --theme-ring: 56 189 248;
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}
+
+a {
+  @apply text-inherit no-underline;
+}
+
+button,
+input,
+select,
+textarea {
+  @apply focus-visible:outline-none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: rgba(148, 163, 184, 0.2);
+}
