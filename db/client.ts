@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { customers, invoiceItems, invoiceSequences, invoices, savedItems, companySettings } from './schema';
+import { customers, invoiceItems, invoiceSequences, invoices, savedItems, companySettings, users, sessions, accounts, verifications } from './schema';
 
 const databasePath = path.join(process.cwd(), 'sqlite.db');
 const sqlite = new Database(databasePath);
@@ -78,10 +78,54 @@ sqlite.exec(`
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    name TEXT,
+    image TEXT,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    id_token TEXT,
+    expires_at INTEGER,
+    password TEXT,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS verifications (
+    id TEXT PRIMARY KEY,
+    identifier TEXT NOT NULL,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
 `);
 
 export const db = drizzle(sqlite, {
-  schema: { customers, savedItems, invoiceSequences, invoices, invoiceItems, companySettings }
+  schema: { customers, savedItems, invoiceSequences, invoices, invoiceItems, companySettings, users, sessions, accounts, verifications }
 });
 
 export type DbClient = typeof db;

@@ -661,3 +661,164 @@ export const upsertCompanySettings = async (
 
   return (await getCompanySettings())!;
 };
+
+// Analytics Functions
+
+export interface AnalyticsData {
+  totalRevenue: number;
+  totalInvoices: number;
+  paidInvoices: number;
+  unpaidInvoices: number;
+  overdueInvoices: number;
+  revenueByMonth: Array<{ month: string; revenue: number }>;
+  invoicesByStatus: Array<{ status: string; count: number }>;
+  topCustomers: Array<{ customerName: string; totalRevenue: number; invoiceCount: number }>;
+}
+
+export const getAnalytics = async (): Promise<AnalyticsData> => {
+  // Total revenue and counts
+  const totalStats = await db
+    .select({
+      totalRevenue: sql<number>`COALESCE(SUM(${invoices.total}), 0)`,
+      totalInvoices: sql<number>`COUNT(*)`,
+      paidInvoices: sql<number>`SUM(CASE WHEN ${invoices.status} = 'paid' THEN 1 ELSE 0 END)`,
+      unpaidInvoices: sql<number>`SUM(CASE WHEN ${invoices.status} IN ('draft', 'sent') THEN 1 ELSE 0 END)`,
+      overdueInvoices: sql<number>`SUM(CASE WHEN ${invoices.status} = 'overdue' THEN 1 ELSE 0 END)`
+    })
+    .from(invoices);
+
+  // Revenue by month (last 12 months)
+  const revenueByMonth = await db
+    .select({
+      month: sql<string>`strftime('%Y-%m', ${invoices.issueDate})`,
+      revenue: sql<number>`SUM(${invoices.total})`
+    })
+    .from(invoices)
+    .where(sql`${invoices.issueDate} >= date('now', '-12 months')`)
+    .groupBy(sql`strftime('%Y-%m', ${invoices.issueDate})`)
+    .orderBy(sql`strftime('%Y-%m', ${invoices.issueDate})`);
+
+  // Invoices by status
+  const invoicesByStatus = await db
+    .select({
+      status: invoices.status,
+      count: sql<number>`COUNT(*)`
+    })
+    .from(invoices)
+    .groupBy(invoices.status);
+
+  // Top customers by revenue
+  const topCustomers = await db
+    .select({
+      customerName: customers.name,
+      totalRevenue: sql<number>`SUM(${invoices.total})`,
+      invoiceCount: sql<number>`COUNT(*)`
+    })
+    .from(invoices)
+    .innerJoin(customers, eq(invoices.customerId, customers.id))
+    .groupBy(customers.id, customers.name)
+    .orderBy(desc(sql`SUM(${invoices.total})`))
+    .limit(10);
+
+  return {
+    totalRevenue: totalStats[0]?.totalRevenue || 0,
+    totalInvoices: totalStats[0]?.totalInvoices || 0,
+    paidInvoices: totalStats[0]?.paidInvoices || 0,
+    unpaidInvoices: totalStats[0]?.unpaidInvoices || 0,
+    overdueInvoices: totalStats[0]?.overdueInvoices || 0,
+    revenueByMonth: revenueByMonth.map(r => ({
+      month: r.month,
+      revenue: Number(r.revenue)
+    })),
+    invoicesByStatus: invoicesByStatus.map(s => ({
+      status: s.status,
+      count: Number(s.count)
+    })),
+    topCustomers: topCustomers.map(c => ({
+      customerName: c.customerName,
+      totalRevenue: Number(c.totalRevenue),
+      invoiceCount: Number(c.invoiceCount)
+    }))
+  };
+};
+
+// Advanced search for invoices
+export interface InvoiceSearchParams {
+  query?: string;
+  status?: string;
+  customerId?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export const searchInvoices = async (params: InvoiceSearchParams): Promise<InvoiceListItem[]> => {
+  let query = db
+    .select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      customerName: customers.name,
+      issueDate: invoices.issueDate,
+      dueDate: invoices.dueDate,
+      total: invoices.total,
+      currencyCode: invoices.currencyCode,
+      currencySymbol: invoices.currencySymbol,
+      status: invoices.status,
+      createdAt: invoices.createdAt
+    })
+    .from(invoices)
+    .innerJoin(customers, eq(invoices.customerId, customers.id))
+    .$dynamic();
+
+  const conditions = [];
+
+  if (params.query) {
+    conditions.push(
+      sql`(${invoices.invoiceNumber} LIKE ${'%' + params.query + '%'} OR ${customers.name} LIKE ${'%' + params.query + '%'})`
+    );
+  }
+
+  if (params.status) {
+    conditions.push(eq(invoices.status, params.status));
+  }
+
+  if (params.customerId) {
+    conditions.push(eq(invoices.customerId, params.customerId));
+  }
+
+  if (params.minAmount !== undefined) {
+    conditions.push(sql`${invoices.total} >= ${params.minAmount}`);
+  }
+
+  if (params.maxAmount !== undefined) {
+    conditions.push(sql`${invoices.total} <= ${params.maxAmount}`);
+  }
+
+  if (params.startDate) {
+    conditions.push(sql`${invoices.issueDate} >= ${params.startDate}`);
+  }
+
+  if (params.endDate) {
+    conditions.push(sql`${invoices.issueDate} <= ${params.endDate}`);
+  }
+
+  if (conditions.length > 0) {
+    query = query.where(sql`${sql.join(conditions, sql` AND `)}`);
+  }
+
+  const results = await query.orderBy(desc(invoices.createdAt));
+
+  return results.map(row => ({
+    id: row.id,
+    invoiceNumber: row.invoiceNumber,
+    customerName: row.customerName,
+    issueDate: row.issueDate,
+    dueDate: row.dueDate ?? null,
+    total: row.total,
+    currencyCode: row.currencyCode,
+    currencySymbol: row.currencySymbol,
+    status: row.status as 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled',
+    createdAt: row.createdAt
+  }));
+};
