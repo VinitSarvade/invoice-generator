@@ -1,4 +1,4 @@
-import { eq, asc, sql } from 'drizzle-orm';
+import { eq, asc, desc, sql } from 'drizzle-orm';
 import type { InferSelectModel } from 'drizzle-orm';
 import { db } from './client';
 import {
@@ -6,11 +6,12 @@ import {
   invoiceItems,
   invoiceSequences,
   invoices,
-  savedItems
+  savedItems,
+  companySettings
 } from './schema';
 import { createId } from '@/lib/id';
 import { getCustomerShortcode, calculateTotals } from '@/lib/invoice';
-import type { Customer, InvoicePayload, LineItem, SavedLineItem } from '@/types/invoice';
+import type { Customer, InvoicePayload, LineItem, SavedLineItem, CompanySettings, InvoiceListItem } from '@/types/invoice';
 import { currencyOptions } from '@/lib/currency';
 
 const nowSql = sql`(strftime('%s','now'))`;
@@ -465,4 +466,198 @@ export const previewInvoiceNumber = async (shortcode: string) => {
 
   const nextValue = (sequence?.lastNumber ?? 0) + 1;
   return `INV-${shortcode}-${String(nextValue).padStart(4, '0')}`;
+};
+
+// Get all invoices with customer info
+export const getAllInvoices = async (): Promise<InvoiceListItem[]> => {
+  const records = await db
+    .select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      customerName: customers.name,
+      issueDate: invoices.issueDate,
+      dueDate: invoices.dueDate,
+      total: invoices.total,
+      currencyCode: invoices.currencyCode,
+      currencySymbol: invoices.currencySymbol,
+      status: invoices.status,
+      createdAt: invoices.createdAt
+    })
+    .from(invoices)
+    .innerJoin(customers, eq(invoices.customerId, customers.id))
+    .orderBy(desc(invoices.createdAt));
+
+  return records.map(row => ({
+    id: row.id,
+    invoiceNumber: row.invoiceNumber,
+    customerName: row.customerName,
+    issueDate: row.issueDate,
+    dueDate: row.dueDate ?? null,
+    total: row.total,
+    currencyCode: row.currencyCode,
+    currencySymbol: row.currencySymbol,
+    status: row.status as 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled',
+    createdAt: row.createdAt
+  }));
+};
+
+// Get single invoice by ID with all details
+export const getInvoiceById = async (invoiceId: string): Promise<InvoicePayload | null> => {
+  const invoiceRecord = (
+    await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.id, invoiceId))
+      .limit(1)
+  )[0];
+
+  if (!invoiceRecord) {
+    return null;
+  }
+
+  const customerRecord = (
+    await db
+      .select()
+      .from(customers)
+      .where(eq(customers.id, invoiceRecord.customerId))
+      .limit(1)
+  )[0];
+
+  if (!customerRecord) {
+    return null;
+  }
+
+  const items = await db
+    .select()
+    .from(invoiceItems)
+    .where(eq(invoiceItems.invoiceId, invoiceId))
+    .orderBy(asc(invoiceItems.position));
+
+  const lineItems: LineItem[] = items.map(item => ({
+    id: item.id,
+    name: item.name,
+    description: item.description ?? null,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    taxRate: item.taxRate
+  }));
+
+  const currencyMeta = currencyOptions.find(c => c.code === invoiceRecord.currencyCode) ?? {
+    code: invoiceRecord.currencyCode,
+    symbol: invoiceRecord.currencySymbol,
+    name: invoiceRecord.currencyCode
+  };
+
+  const payload: InvoicePayload = {
+    id: invoiceRecord.id,
+    invoiceNumber: invoiceRecord.invoiceNumber,
+    issueDate: invoiceRecord.issueDate,
+    dueDate: invoiceRecord.dueDate ?? null,
+    currency: currencyMeta,
+    customer: mapCustomer(customerRecord, null),
+    lineItems,
+    notes: invoiceRecord.notes ?? '',
+    roundOff: invoiceRecord.roundOff,
+    status: invoiceRecord.status as 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled',
+    paidAt: invoiceRecord.paidAt ?? null,
+    createdAt: invoiceRecord.createdAt,
+    totals: {
+      subtotal: invoiceRecord.subtotal,
+      taxTotal: invoiceRecord.taxTotal,
+      roundOff: invoiceRecord.roundOff,
+      total: invoiceRecord.total
+    }
+  };
+
+  return payload;
+};
+
+// Delete invoice
+export const deleteInvoice = async (invoiceId: string): Promise<void> => {
+  await db.delete(invoices).where(eq(invoices.id, invoiceId));
+};
+
+// Delete customer
+export const deleteCustomer = async (customerId: string): Promise<void> => {
+  await db.delete(customers).where(eq(customers.id, customerId));
+};
+
+// Delete saved item
+export const deleteSavedItem = async (itemId: string): Promise<void> => {
+  await db.delete(savedItems).where(eq(savedItems.id, itemId));
+};
+
+// Update invoice status
+export const updateInvoiceStatus = async (
+  invoiceId: string,
+  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled',
+  paidAt?: number | null
+): Promise<void> => {
+  const updateData: any = { status };
+
+  if (status === 'paid' && paidAt) {
+    updateData.paidAt = paidAt;
+  }
+
+  await db.update(invoices).set(updateData).where(eq(invoices.id, invoiceId));
+};
+
+// Get company settings
+export const getCompanySettings = async (): Promise<CompanySettings | null> => {
+  const records = await db.select().from(companySettings).limit(1);
+
+  if (records.length === 0) {
+    return null;
+  }
+
+  const record = records[0];
+  return {
+    id: record.id,
+    companyName: record.companyName,
+    companyEmail: record.companyEmail ?? null,
+    companyPhone: record.companyPhone ?? null,
+    companyAddress: record.companyAddress ?? null,
+    companyLogo: record.companyLogo ?? null,
+    taxId: record.taxId ?? null,
+    website: record.website ?? null,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+};
+
+// Create or update company settings
+export const upsertCompanySettings = async (
+  input: Omit<CompanySettings, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<CompanySettings> => {
+  const existing = await getCompanySettings();
+  const id = existing?.id ?? createId();
+
+  if (existing) {
+    await db
+      .update(companySettings)
+      .set({
+        companyName: input.companyName,
+        companyEmail: input.companyEmail ?? null,
+        companyPhone: input.companyPhone ?? null,
+        companyAddress: input.companyAddress ?? null,
+        companyLogo: input.companyLogo ?? null,
+        taxId: input.taxId ?? null,
+        website: input.website ?? null,
+        updatedAt: nowSql
+      })
+      .where(eq(companySettings.id, id));
+  } else {
+    await db.insert(companySettings).values({
+      id,
+      companyName: input.companyName,
+      companyEmail: input.companyEmail ?? null,
+      companyPhone: input.companyPhone ?? null,
+      companyAddress: input.companyAddress ?? null,
+      companyLogo: input.companyLogo ?? null,
+      taxId: input.taxId ?? null,
+      website: input.website ?? null
+    });
+  }
+
+  return (await getCompanySettings())!;
 };

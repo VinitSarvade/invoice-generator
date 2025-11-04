@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { updateCustomerRecord } from '@/db/queries';
+import { updateCustomerRecord, deleteCustomer } from '@/db/queries';
 
 const customerUpdateSchema = z.object({
   name: z.string().min(1, 'Customer name is required'),
@@ -35,5 +35,18 @@ export const PATCH = async (
       return NextResponse.json({ message: 'Customer not found.' }, { status: 404 });
     }
     return NextResponse.json({ message: 'Unable to update customer.' }, { status: 500 });
+  }
+};
+
+export const DELETE = async (
+  request: Request,
+  { params }: { params: { customerId: string } }
+) => {
+  try {
+    await deleteCustomer(params.customerId);
+    return NextResponse.json({ message: 'Customer deleted successfully.' });
+  } catch (error) {
+    console.error('Failed to delete customer', error);
+    return NextResponse.json({ message: 'Unable to delete customer.' }, { status: 500 });
   }
 };

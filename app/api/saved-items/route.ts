@@ -9,6 +9,16 @@ const savedItemSchema = z.object({
   taxRate: z.coerce.number()
 });
 
+export const GET = async () => {
+  try {
+    const items = await getSavedLineItems();
+    return NextResponse.json({ items });
+  } catch (error) {
+    console.error('Failed to fetch saved items', error);
+    return NextResponse.json({ message: 'Unable to fetch saved items.' }, { status: 500 });
+  }
+};
+
 export const POST = async (request: Request) => {
   try {
     const payload = savedItemSchema.parse(await request.json());

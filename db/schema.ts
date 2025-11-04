@@ -47,6 +47,8 @@ export const invoices = sqliteTable('invoices', {
   subtotal: real('subtotal').notNull(),
   taxTotal: real('tax_total').notNull(),
   total: real('total').notNull(),
+  status: text('status').notNull().default('draft'), // draft, sent, paid, overdue, cancelled
+  paidAt: integer('paid_at', { mode: 'number' }),
   createdAt: integer('created_at', { mode: 'number' })
     .notNull()
     .default(sql`(strftime('%s','now'))`)
@@ -63,4 +65,21 @@ export const invoiceItems = sqliteTable('invoice_items', {
   unitPrice: real('unit_price').notNull(),
   taxRate: real('tax_rate').notNull(),
   position: integer('position').notNull()
+});
+
+export const companySettings = sqliteTable('company_settings', {
+  id: text('id').primaryKey(),
+  companyName: text('company_name').notNull(),
+  companyEmail: text('company_email'),
+  companyPhone: text('company_phone'),
+  companyAddress: text('company_address'),
+  companyLogo: text('company_logo'), // base64 or URL
+  taxId: text('tax_id'),
+  website: text('website'),
+  createdAt: integer('created_at', { mode: 'number' })
+    .notNull()
+    .default(sql`(strftime('%s','now'))`),
+  updatedAt: integer('updated_at', { mode: 'number' })
+    .notNull()
+    .default(sql`(strftime('%s','now'))`)
 });

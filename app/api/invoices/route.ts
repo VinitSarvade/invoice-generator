@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createOrUpdateInvoice } from '@/db/queries';
+import { createOrUpdateInvoice, getAllInvoices } from '@/db/queries';
 
 const lineItemSchema = z.object({
   id: z.string().optional(),
@@ -22,6 +22,16 @@ const invoiceSchema = z.object({
   roundOff: z.coerce.number(),
   lineItems: z.array(lineItemSchema).min(1, 'At least one line item is required')
 });
+
+export const GET = async () => {
+  try {
+    const invoices = await getAllInvoices();
+    return NextResponse.json({ invoices });
+  } catch (error) {
+    console.error('Failed to fetch invoices', error);
+    return NextResponse.json({ message: 'Unable to fetch invoices.' }, { status: 500 });
+  }
+};
 
 export const POST = async (request: Request) => {
   try {

@@ -53,6 +53,9 @@ export interface InvoicePayload {
   notes: string;
   roundOff: number;
   totals?: InvoiceTotals;
+  status?: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+  paidAt?: number | null;
+  createdAt?: number;
 }
 
 export interface InvoiceTotals {
@@ -69,4 +72,30 @@ export interface EmailPayload {
   message: string;
   senderEmail: string;
   invoice: InvoicePayload;
+}
+
+export interface CompanySettings {
+  id: string;
+  companyName: string;
+  companyEmail?: string | null;
+  companyPhone?: string | null;
+  companyAddress?: string | null;
+  companyLogo?: string | null;
+  taxId?: string | null;
+  website?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface InvoiceListItem {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  issueDate: string;
+  dueDate?: string | null;
+  total: number;
+  currencyCode: string;
+  currencySymbol: string;
+  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+  createdAt: number;
 }
