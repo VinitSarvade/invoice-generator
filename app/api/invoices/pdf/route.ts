@@ -5,6 +5,7 @@ import { InvoicePayload } from '@/types/invoice';
 import { requireAuth } from '@/lib/auth-middleware';
 import { sanitizeFilename } from '@/lib/validation';
 import { HTTP_STATUS, ERROR_MESSAGES } from '@/lib/constants';
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit';
 
 // Basic validation schema for PDF generation
 const pdfPayloadSchema = z.object({
@@ -15,6 +16,10 @@ const pdfPayloadSchema = z.object({
 }).passthrough(); // Allow other invoice fields
 
 export const POST = async (request: Request) => {
+  // Check rate limit (strict for PDF generation)
+  const rateLimitResult = checkRateLimit(request, RateLimitPresets.STRICT);
+  if (rateLimitResult) return rateLimitResult;
+
   // Check authentication
   const authResult = await requireAuth(request);
   if (authResult instanceof NextResponse) return authResult;

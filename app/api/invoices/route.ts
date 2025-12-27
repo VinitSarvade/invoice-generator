@@ -4,8 +4,13 @@ import { createOrUpdateInvoice, getAllInvoices } from '@/db/queries';
 import { requireAuth } from '@/lib/auth-middleware';
 import { invoiceSchema } from '@/lib/validation';
 import { HTTP_STATUS, ERROR_MESSAGES } from '@/lib/constants';
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit';
 
 export const GET = async (request: Request) => {
+  // Check rate limit
+  const rateLimitResult = checkRateLimit(request, RateLimitPresets.GENEROUS);
+  if (rateLimitResult) return rateLimitResult;
+
   // Check authentication
   const authResult = await requireAuth(request);
   if (authResult instanceof NextResponse) return authResult;
@@ -23,6 +28,10 @@ export const GET = async (request: Request) => {
 };
 
 export const POST = async (request: Request) => {
+  // Check rate limit
+  const rateLimitResult = checkRateLimit(request, RateLimitPresets.STANDARD);
+  if (rateLimitResult) return rateLimitResult;
+
   // Check authentication
   const authResult = await requireAuth(request);
   if (authResult instanceof NextResponse) return authResult;

@@ -331,23 +331,21 @@ export const createOrUpdateInvoice = async (
     let invoiceNumber = existingInvoice?.invoiceNumber;
 
     if (!invoiceNumber) {
-      const sequence = (
-        await tx
-          .select({ lastNumber: invoiceSequences.lastNumber })
-          .from(invoiceSequences)
-          .where(eq(invoiceSequences.shortcode, customerRecord.shortcode))
-          .limit(1)
-      )[0];
-
-      const nextNumber = (sequence?.lastNumber ?? 0) + 1;
-
+      // Atomic increment to prevent race conditions when multiple invoices are created concurrently
+      // First, ensure the sequence exists
       await tx
         .insert(invoiceSequences)
-        .values({ shortcode: customerRecord.shortcode, lastNumber: nextNumber })
-        .onConflictDoUpdate({
-          target: invoiceSequences.shortcode,
-          set: { lastNumber: nextNumber }
-        });
+        .values({ shortcode: customerRecord.shortcode, lastNumber: 0 })
+        .onConflictDoNothing();
+
+      // Then atomically increment and return the new value
+      const result = await tx
+        .update(invoiceSequences)
+        .set({ lastNumber: sql`${invoiceSequences.lastNumber} + 1` })
+        .where(eq(invoiceSequences.shortcode, customerRecord.shortcode))
+        .returning({ lastNumber: invoiceSequences.lastNumber });
+
+      const nextNumber = result[0]?.lastNumber ?? 1;
 
       invoiceNumber = `INV-${customerRecord.shortcode}-${String(nextNumber).padStart(4, '0')}`;
     }
@@ -468,8 +466,26 @@ export const previewInvoiceNumber = async (shortcode: string) => {
   return `INV-${shortcode}-${String(nextValue).padStart(4, '0')}`;
 };
 
-// Get all invoices with customer info
-export const getAllInvoices = async (): Promise<InvoiceListItem[]> => {
+// Pagination options
+interface PaginationOptions {
+  page?: number;
+  pageSize?: number;
+}
+
+interface PaginatedResult<T> {
+  data: T[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+// Get all invoices with customer info (paginated)
+export const getAllInvoices = async (
+  options: PaginationOptions = {}
+): Promise<InvoiceListItem[]> => {
   const records = await db
     .select({
       id: invoices.id,
@@ -485,7 +501,9 @@ export const getAllInvoices = async (): Promise<InvoiceListItem[]> => {
     })
     .from(invoices)
     .innerJoin(customers, eq(invoices.customerId, customers.id))
-    .orderBy(desc(invoices.createdAt));
+    .orderBy(desc(invoices.createdAt))
+    .limit(options.pageSize || 1000) // Default large limit for backward compatibility
+    .offset(((options.page || 1) - 1) * (options.pageSize || 1000));
 
   return records.map(row => ({
     id: row.id,
@@ -499,6 +517,64 @@ export const getAllInvoices = async (): Promise<InvoiceListItem[]> => {
     status: row.status as 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled',
     createdAt: row.createdAt
   }));
+};
+
+// Get paginated invoices with total count
+export const getPaginatedInvoices = async (
+  options: PaginationOptions = {}
+): Promise<PaginatedResult<InvoiceListItem>> => {
+  const page = Math.max(1, options.page || 1);
+  const pageSize = Math.min(Math.max(1, options.pageSize || 50), 500); // Max 500 per page
+  const offset = (page - 1) * pageSize;
+
+  // Get total count
+  const countResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(invoices);
+  const total = Number(countResult[0]?.count) || 0;
+
+  // Get paginated records
+  const records = await db
+    .select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      customerName: customers.name,
+      issueDate: invoices.issueDate,
+      dueDate: invoices.dueDate,
+      total: invoices.total,
+      currencyCode: invoices.currencyCode,
+      currencySymbol: invoices.currencySymbol,
+      status: invoices.status,
+      createdAt: invoices.createdAt
+    })
+    .from(invoices)
+    .innerJoin(customers, eq(invoices.customerId, customers.id))
+    .orderBy(desc(invoices.createdAt))
+    .limit(pageSize)
+    .offset(offset);
+
+  const data = records.map(row => ({
+    id: row.id,
+    invoiceNumber: row.invoiceNumber,
+    customerName: row.customerName,
+    issueDate: row.issueDate,
+    dueDate: row.dueDate ?? null,
+    total: row.total,
+    currencyCode: row.currencyCode,
+    currencySymbol: row.currencySymbol,
+    status: row.status as 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled',
+    createdAt: row.createdAt
+  }));
+
+  return {
+    data,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize)
+    }
+  };
 };
 
 // Get single invoice by ID with all details

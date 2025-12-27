@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import clsx from 'clsx';
 import './globals.css';
 import NavBar from './components/NavBar';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export const metadata: Metadata = {
   title: 'Invoice Generator',
@@ -20,7 +21,9 @@ export default function RootLayout({
     <html lang="en" data-theme="default" className={clsx(inter.variable)}>
       <body className="min-h-screen bg-slate-100 text-slate-900">
         <NavBar />
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
       </body>
     </html>
   );

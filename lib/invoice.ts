@@ -4,17 +4,35 @@ export const calculateTotalsFromItems = (
   lineItems: LineItem[],
   roundOff: number
 ): InvoiceTotals => {
-  const subtotal = lineItems.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
-  const taxTotal = lineItems.reduce((acc, item) => {
-    const base = item.quantity * item.unitPrice;
-    return acc + base * (item.taxRate / 100);
+  // Validate inputs
+  if (!Array.isArray(lineItems)) {
+    throw new Error('lineItems must be an array');
+  }
+
+  const safeRoundOff = Number(roundOff) || 0;
+
+  const subtotal = lineItems.reduce((acc, item) => {
+    // Ensure all values are valid numbers
+    const quantity = Number(item?.quantity) || 0;
+    const unitPrice = Number(item?.unitPrice) || 0;
+    return acc + quantity * unitPrice;
   }, 0);
-  const total = subtotal + taxTotal + roundOff;
+
+  const taxTotal = lineItems.reduce((acc, item) => {
+    // Ensure all values are valid numbers
+    const quantity = Number(item?.quantity) || 0;
+    const unitPrice = Number(item?.unitPrice) || 0;
+    const taxRate = Number(item?.taxRate) || 0;
+    const base = quantity * unitPrice;
+    return acc + base * (taxRate / 100);
+  }, 0);
+
+  const total = subtotal + taxTotal + safeRoundOff;
 
   return {
     subtotal,
     taxTotal,
-    roundOff,
+    roundOff: safeRoundOff,
     total
   };
 };

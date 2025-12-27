@@ -1,4 +1,4 @@
-import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, real, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 export const customers = sqliteTable('customers', {
@@ -10,7 +10,10 @@ export const customers = sqliteTable('customers', {
   createdAt: integer('created_at', { mode: 'number' })
     .notNull()
     .default(sql`(strftime('%s','now'))`)
-});
+}, (table) => ({
+  shortcodeIdx: index('customers_shortcode_idx').on(table.shortcode),
+  nameIdx: index('customers_name_idx').on(table.name)
+}));
 
 export const savedItems = sqliteTable('saved_items', {
   id: text('id').primaryKey(),
@@ -52,7 +55,13 @@ export const invoices = sqliteTable('invoices', {
   createdAt: integer('created_at', { mode: 'number' })
     .notNull()
     .default(sql`(strftime('%s','now'))`)
-});
+}, (table) => ({
+  customerIdIdx: index('invoices_customer_id_idx').on(table.customerId),
+  statusIdx: index('invoices_status_idx').on(table.status),
+  createdAtIdx: index('invoices_created_at_idx').on(table.createdAt),
+  // Composite index for customer invoice history queries
+  customerCreatedIdx: index('invoices_customer_created_idx').on(table.customerId, table.createdAt)
+}));
 
 export const invoiceItems = sqliteTable('invoice_items', {
   id: text('id').primaryKey(),
@@ -65,7 +74,9 @@ export const invoiceItems = sqliteTable('invoice_items', {
   unitPrice: real('unit_price').notNull(),
   taxRate: real('tax_rate').notNull(),
   position: integer('position').notNull()
-});
+}, (table) => ({
+  invoiceIdIdx: index('invoice_items_invoice_id_idx').on(table.invoiceId)
+}));
 
 export const companySettings = sqliteTable('company_settings', {
   id: text('id').primaryKey(),
@@ -110,7 +121,10 @@ export const sessions = sqliteTable('sessions', {
   createdAt: integer('created_at', { mode: 'number' })
     .notNull()
     .default(sql`(strftime('%s','now'))`)
-});
+}, (table) => ({
+  userIdIdx: index('sessions_user_id_idx').on(table.userId),
+  expiresAtIdx: index('sessions_expires_at_idx').on(table.expiresAt)
+}));
 
 export const accounts = sqliteTable('accounts', {
   id: text('id').primaryKey(),
@@ -130,7 +144,10 @@ export const accounts = sqliteTable('accounts', {
   updatedAt: integer('updated_at', { mode: 'number' })
     .notNull()
     .default(sql`(strftime('%s','now'))`)
-});
+}, (table) => ({
+  userIdIdx: index('accounts_user_id_idx').on(table.userId),
+  providerAccountIdx: index('accounts_provider_account_idx').on(table.providerId, table.accountId)
+}));
 
 export const verifications = sqliteTable('verifications', {
   id: text('id').primaryKey(),
@@ -140,4 +157,7 @@ export const verifications = sqliteTable('verifications', {
   createdAt: integer('created_at', { mode: 'number' })
     .notNull()
     .default(sql`(strftime('%s','now'))`)
-});
+}, (table) => ({
+  identifierIdx: index('verifications_identifier_idx').on(table.identifier),
+  expiresAtIdx: index('verifications_expires_at_idx').on(table.expiresAt)
+}));

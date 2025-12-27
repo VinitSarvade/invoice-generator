@@ -6,6 +6,7 @@ import { EmailPayload } from '@/types/invoice';
 import { requireAuth } from '@/lib/auth-middleware';
 import { emailPayloadSchema, sanitizeFilename } from '@/lib/validation';
 import { HTTP_STATUS, ERROR_MESSAGES, FEATURE_FLAGS } from '@/lib/constants';
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit';
 
 const getTransporter = async () => {
   const host = process.env.SMTP_HOST;
@@ -28,6 +29,10 @@ const getTransporter = async () => {
 };
 
 export const POST = async (request: Request) => {
+  // Check rate limit (strict for email sending)
+  const rateLimitResult = checkRateLimit(request, RateLimitPresets.STRICT);
+  if (rateLimitResult) return rateLimitResult;
+
   // Check authentication
   const authResult = await requireAuth(request);
   if (authResult instanceof NextResponse) return authResult;
