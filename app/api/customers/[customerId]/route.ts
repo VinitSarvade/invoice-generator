@@ -1,40 +1,50 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { updateCustomerRecord, deleteCustomer } from '@/db/queries';
+import { requireAuth } from '@/lib/auth-middleware';
+import { customerSchema } from '@/lib/validation';
+import { HTTP_STATUS, ERROR_MESSAGES } from '@/lib/constants';
 
-const customerUpdateSchema = z.object({
-  name: z.string().min(1, 'Customer name is required'),
-  email: z
-    .string()
-    .email('Please provide a valid email')
-    .optional()
-    .or(z.literal('')),
-  address: z.string().optional().or(z.literal(''))
-});
+const customerIdSchema = z.string().uuid('Invalid customer ID');
 
 export const PATCH = async (
   request: Request,
   { params }: { params: { customerId: string } }
 ) => {
-  try {
-    const payload = customerUpdateSchema.parse(await request.json());
+  // Check authentication
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) return authResult;
 
-    const customer = await updateCustomerRecord(params.customerId, {
+  try {
+    // Validate customer ID
+    const customerId = customerIdSchema.parse(params.customerId);
+    const payload = customerSchema.parse(await request.json());
+
+    const customer = await updateCustomerRecord(customerId, {
       name: payload.name,
-      email: payload.email?.trim() || null,
-      address: payload.address?.trim() || null
+      email: payload.email || null,
+      address: payload.address || null
     });
 
-    return NextResponse.json({ customer });
+    return NextResponse.json({ customer }, { status: HTTP_STATUS.OK });
   } catch (error) {
-    console.error('Failed to update customer', error);
+    console.error('Failed to update customer:', error);
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ message: error.errors[0]?.message ?? 'Invalid input.' }, { status: 400 });
+      return NextResponse.json(
+        { message: error.errors[0]?.message ?? ERROR_MESSAGES.VALIDATION_FAILED },
+        { status: HTTP_STATUS.BAD_REQUEST }
+      );
     }
     if (error instanceof Error && error.message === 'Customer not found') {
-      return NextResponse.json({ message: 'Customer not found.' }, { status: 404 });
+      return NextResponse.json(
+        { message: ERROR_MESSAGES.NOT_FOUND },
+        { status: HTTP_STATUS.NOT_FOUND }
+      );
     }
-    return NextResponse.json({ message: 'Unable to update customer.' }, { status: 500 });
+    return NextResponse.json(
+      { message: ERROR_MESSAGES.DATABASE_ERROR },
+      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR }
+    );
   }
 };
 
@@ -42,11 +52,29 @@ export const DELETE = async (
   request: Request,
   { params }: { params: { customerId: string } }
 ) => {
+  // Check authentication
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) return authResult;
+
   try {
-    await deleteCustomer(params.customerId);
-    return NextResponse.json({ message: 'Customer deleted successfully.' });
+    // Validate customer ID
+    const customerId = customerIdSchema.parse(params.customerId);
+    await deleteCustomer(customerId);
+    return NextResponse.json(
+      { message: 'Customer deleted successfully.' },
+      { status: HTTP_STATUS.OK }
+    );
   } catch (error) {
-    console.error('Failed to delete customer', error);
-    return NextResponse.json({ message: 'Unable to delete customer.' }, { status: 500 });
+    console.error('Failed to delete customer:', error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { message: error.errors[0]?.message ?? ERROR_MESSAGES.VALIDATION_FAILED },
+        { status: HTTP_STATUS.BAD_REQUEST }
+      );
+    }
+    return NextResponse.json(
+      { message: ERROR_MESSAGES.DATABASE_ERROR },
+      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR }
+    );
   }
 };

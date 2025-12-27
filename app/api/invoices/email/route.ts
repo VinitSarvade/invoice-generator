@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
+import { z } from 'zod';
 import { buildInvoicePdf } from '@/lib/pdf';
 import { EmailPayload } from '@/types/invoice';
+import { requireAuth } from '@/lib/auth-middleware';
+import { emailPayloadSchema, sanitizeFilename } from '@/lib/validation';
+import { HTTP_STATUS, ERROR_MESSAGES, FEATURE_FLAGS } from '@/lib/constants';
 
 const getTransporter = async () => {
   const host = process.env.SMTP_HOST;
@@ -24,24 +28,39 @@ const getTransporter = async () => {
 };
 
 export const POST = async (request: Request) => {
-  try {
-    const payload = (await request.json()) as EmailPayload;
+  // Check authentication
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) return authResult;
 
-    if (!payload?.invoice || !payload?.to) {
+  // Check if email feature is enabled
+  if (!FEATURE_FLAGS.ENABLE_EMAIL) {
+    return NextResponse.json(
+      { message: 'Email functionality is currently disabled.' },
+      { status: HTTP_STATUS.SERVICE_UNAVAILABLE }
+    );
+  }
+
+  try {
+    // Validate and sanitize email payload
+    const payload = emailPayloadSchema.parse(await request.json());
+
+    // Build PDF
+    const pdfBuffer = await buildInvoicePdf(payload.invoice);
+
+    // Get email transporter
+    const transporter = await getTransporter();
+
+    // Validate SMTP_FROM in production
+    const fromAddress = process.env.SMTP_FROM || payload.senderEmail;
+    if (process.env.NODE_ENV === 'production' && !process.env.SMTP_FROM) {
       return NextResponse.json(
-        { message: 'Recipient address and invoice data are required.' },
-        { status: 400 }
+        { message: 'Email configuration error. Please contact support.' },
+        { status: HTTP_STATUS.INTERNAL_SERVER_ERROR }
       );
     }
 
-    const pdfBuffer = await buildInvoicePdf(payload.invoice);
-
-    const transporter = await getTransporter();
-
-    const fromAddress =
-      process.env.SMTP_FROM ||
-      payload.senderEmail ||
-      'invoice-generator@example.com';
+    // Sanitize filename to prevent header injection
+    const safeFilename = sanitizeFilename(payload.invoice.invoiceNumber) + '.pdf';
 
     const message = {
       from: fromAddress,
@@ -51,7 +70,7 @@ export const POST = async (request: Request) => {
       text: payload.message,
       attachments: [
         {
-          filename: `${payload.invoice.invoiceNumber}.pdf`,
+          filename: safeFilename,
           content: pdfBuffer,
           contentType: 'application/pdf'
         }
@@ -61,18 +80,27 @@ export const POST = async (request: Request) => {
     const info = await transporter.sendMail(message);
 
     if ('message' in info) {
-      console.info('Invoice email payload', info.message); // JSON transport logs
+      console.info('Invoice email payload:', info.message); // JSON transport logs
     }
 
-    return NextResponse.json({
-      message: 'Invoice email processed successfully',
-      transportInfo: info
-    });
+    return NextResponse.json(
+      {
+        message: 'Invoice email sent successfully',
+        transportInfo: info
+      },
+      { status: HTTP_STATUS.OK }
+    );
   } catch (error) {
-    console.error('Failed to send invoice email', error);
+    console.error('Failed to send invoice email:', error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { message: error.errors[0]?.message ?? ERROR_MESSAGES.VALIDATION_FAILED },
+        { status: HTTP_STATUS.BAD_REQUEST }
+      );
+    }
     return NextResponse.json(
       { message: 'Unable to send the invoice email.' },
-      { status: 500 }
+      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR }
     );
   }
 };

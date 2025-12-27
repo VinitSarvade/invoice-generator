@@ -1,43 +1,53 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createCustomerRecord, getCustomers } from '@/db/queries';
+import { requireAuth } from '@/lib/auth-middleware';
+import { customerSchema } from '@/lib/validation';
+import { HTTP_STATUS, ERROR_MESSAGES } from '@/lib/constants';
 
-const baseCustomerSchema = z.object({
-  name: z.string().min(1, 'Customer name is required'),
-  email: z
-    .string()
-    .email('Please provide a valid email')
-    .optional()
-    .or(z.literal('')),
-  address: z.string().optional().or(z.literal(''))
-});
+export const GET = async (request: Request) => {
+  // Check authentication
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) return authResult;
 
-export const GET = async () => {
   try {
     const customers = await getCustomers();
-    return NextResponse.json({ customers });
+    return NextResponse.json({ customers }, { status: HTTP_STATUS.OK });
   } catch (error) {
-    console.error('Failed to load customers', error);
-    return NextResponse.json({ message: 'Unable to load customers.' }, { status: 500 });
+    console.error('Failed to load customers:', error);
+    return NextResponse.json(
+      { message: ERROR_MESSAGES.DATABASE_ERROR },
+      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR }
+    );
   }
 };
 
 export const POST = async (request: Request) => {
+  // Check authentication
+  const authResult = await requireAuth(request);
+  if (authResult instanceof NextResponse) return authResult;
+
   try {
-    const payload = baseCustomerSchema.parse(await request.json());
+    const payload = customerSchema.parse(await request.json());
 
     const customer = await createCustomerRecord({
       name: payload.name,
-      email: payload.email?.trim() || null,
-      address: payload.address?.trim() || null
+      email: payload.email || null,
+      address: payload.address || null
     });
 
-    return NextResponse.json({ customer });
+    return NextResponse.json({ customer }, { status: HTTP_STATUS.CREATED });
   } catch (error) {
-    console.error('Failed to create customer', error);
+    console.error('Failed to create customer:', error);
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ message: error.errors[0]?.message ?? 'Invalid input.' }, { status: 400 });
+      return NextResponse.json(
+        { message: error.errors[0]?.message ?? ERROR_MESSAGES.VALIDATION_FAILED },
+        { status: HTTP_STATUS.BAD_REQUEST }
+      );
     }
-    return NextResponse.json({ message: 'Unable to create customer.' }, { status: 500 });
+    return NextResponse.json(
+      { message: ERROR_MESSAGES.DATABASE_ERROR },
+      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR }
+    );
   }
 };
