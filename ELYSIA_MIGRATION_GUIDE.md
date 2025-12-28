@@ -1,10 +1,10 @@
-# Elysia API Migration Guide
+# Elysia API Guide
 
-This guide explains how to use the new type-safe Elysia API alongside the existing REST API.
+This guide explains how to use the type-safe Elysia API.
 
 ## 🎯 Overview
 
-We've integrated **Elysia.js** to provide end-to-end type safety for API calls. This gives you:
+**All API endpoints are now type-safe** using Elysia.js! This gives you:
 
 - ✅ **Full Type Safety** - Client knows exact API types
 - ✅ **Autocomplete** - IDE suggestions for all API calls
@@ -14,19 +14,16 @@ We've integrated **Elysia.js** to provide end-to-end type safety for API calls. 
 
 ## 📍 API Endpoints
 
-### Old REST API (Still Available)
+All endpoints are at `/api/*` and fully type-safe:
+
 ```
+/api/health
 /api/invoices
 /api/customers
 /api/analytics
-... etc
-```
-
-### New Type-Safe API
-```
-/api/v2/invoices
-/api/v2/health
-... (more routes coming)
+/api/settings
+/api/saved-items
+/api/auth/[...all] (Better Auth)
 ```
 
 ## 🚀 Quick Start
@@ -41,7 +38,7 @@ import { api } from '@/lib/api-client';
 
 ```typescript
 // List all invoices - FULLY TYPED!
-const { data, error } = await api.v2.invoices.get();
+const { data, error } = await api.invoices.get();
 //     ^? { success: true; data: InvoiceListItem[] }
 
 if (error) {
@@ -56,7 +53,7 @@ console.log(data.data); // InvoiceListItem[]
 
 ```typescript
 // Get invoice by ID
-const { data, error } = await api.v2.invoices({ id: 'invoice-123' }).get();
+const { data, error } = await api.invoices({ id: 'invoice-123' }).get();
 //     ^? { success: true; data: InvoicePayload }
 
 if (data && data.success) {
@@ -68,7 +65,7 @@ if (data && data.success) {
 
 ```typescript
 // Create invoice with validation
-const { data, error } = await api.v2.invoices.post({
+const { data, error } = await api.invoices.post({
   customerId: 'cust-123',
   issueDate: '2025-01-15',
   currencyCode: 'USD',
@@ -90,7 +87,7 @@ const { data, error } = await api.v2.invoices.post({
 
 ```typescript
 // Paginated results
-const { data, error } = await api.v2.invoices.get({
+const { data, error } = await api.invoices.get({
   query: {
     page: '1',
     pageSize: '10'
@@ -103,27 +100,9 @@ if (data && data.success) {
 }
 ```
 
-## 🔄 Migration Examples
+## 🎯 Usage Examples
 
-### Before (Old REST API)
-
-```typescript
-// app/components/MyComponent.tsx
-'use client';
-
-const [invoices, setInvoices] = useState([]);
-
-useEffect(() => {
-  fetch('/api/invoices')
-    .then(res => res.json())
-    .then(data => setInvoices(data.invoices));
-    // ❌ No type safety
-    // ❌ Manual error handling
-    // ❌ Typos won't be caught
-}, []);
-```
-
-### After (Type-Safe Elysia API)
+### Fetch Data with Full Type Safety
 
 ```typescript
 // app/components/MyComponent.tsx
@@ -134,7 +113,7 @@ import { api } from '@/lib/api-client';
 const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
 
 useEffect(() => {
-  api.v2.invoices.get().then(({ data, error }) => {
+  api.invoices.get().then(({ data, error }) => {
     if (error) {
       console.error(error.value.message);
       return;
@@ -152,7 +131,7 @@ useEffect(() => {
 ### Health Check
 ```typescript
 // No auth required
-const { data } = await api.v2.health.get();
+const { data } = await api.health.get();
 // { success: true, status: 'healthy', timestamp: '...' }
 ```
 
@@ -160,16 +139,77 @@ const { data } = await api.v2.health.get();
 
 ```typescript
 // List all invoices
-await api.v2.invoices.get();
+await api.invoices.get();
 
 // List with pagination
-await api.v2.invoices.get({ query: { page: '1', pageSize: '10' } });
+await api.invoices.get({ query: { page: '1', pageSize: '10' } });
+
+// Search invoices
+await api.invoices.search.get({ query: { status: 'paid', minAmount: '100' } });
 
 // Get single invoice
-await api.v2.invoices({ id: 'invoice-id' }).get();
+await api.invoices({ id: 'invoice-id' }).get();
 
 // Create invoice
-await api.v2.invoices.post({ ...invoiceData });
+await api.invoices.post({ ...invoiceData });
+
+// Delete invoice
+await api.invoices({ id: 'invoice-id' }).delete();
+
+// Update invoice status
+await api.invoices({ id: 'invoice-id' }).patch({ status: 'paid', paidAt: Date.now() });
+
+// Send invoice via email
+await api.invoices.email.post({ invoice, to: 'customer@example.com', ... });
+
+// Generate PDF
+await api.invoices.pdf.post({ invoice });
+```
+
+### Customers
+
+```typescript
+// List all customers
+await api.customers.get();
+
+// Create customer
+await api.customers.post({ name: 'John Doe', email: 'john@example.com' });
+
+// Update customer
+await api.customers({ customerId: 'cust-id' }).patch({ name: 'Jane Doe' });
+
+// Delete customer
+await api.customers({ customerId: 'cust-id' }).delete();
+```
+
+### Analytics
+
+```typescript
+// Get analytics data
+await api.analytics.get();
+```
+
+### Settings
+
+```typescript
+// Get company settings
+await api.settings.get();
+
+// Update company settings
+await api.settings.post({ companyName: 'My Company', ... });
+```
+
+### Saved Items
+
+```typescript
+// List all saved items
+await api['saved-items'].get();
+
+// Create saved item
+await api['saved-items'].post({ name: 'Consulting', unitPrice: 100, taxRate: 10 });
+
+// Delete saved item
+await api['saved-items']({ id: 'item-id' }).delete();
 ```
 
 ## 🔒 Authentication

@@ -5,7 +5,7 @@
  */
 
 import { treaty } from '@elysiajs/eden';
-import type { App } from '@/app/api/v2/[[...slugs]]/route';
+import type { App } from '@/app/api/[[...slugs]]/route';
 
 /**
  * Get the base URL for API calls

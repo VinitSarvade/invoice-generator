@@ -26,7 +26,7 @@ export default function InvoiceListExample() {
 
     try {
       // Type-safe API call - fully autocompleted!
-      const { data, error: apiError } = await api.v2.invoices.get({
+      const { data, error: apiError } = await api.invoices.get({
         query: {
           page: String(page),
           pageSize: '10'
@@ -58,7 +58,7 @@ export default function InvoiceListExample() {
 
   // Example: Get single invoice with full type safety
   const viewInvoice = async (id: string) => {
-    const { data, error } = await api.v2.invoices({ id }).get();
+    const { data, error } = await api.invoices({ id }).get();
 
     if (error) {
       alert(`Error: ${error.value?.message}`);
@@ -74,7 +74,7 @@ export default function InvoiceListExample() {
 
   // Example: Create invoice with validation
   const createInvoice = async () => {
-    const { data, error } = await api.v2.invoices.post({
+    const { data, error } = await api.invoices.post({
       customerId: 'customer-123',
       issueDate: new Date().toISOString().split('T')[0],
       currencyCode: 'USD',
